@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Studio & Balap Mobil 3D</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Nunito:wght@700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Nunito', sans-serif;
+            background-color: #0f172a; /* Slate-900 */
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        h1, .racing-font {
+            font-family: 'Bangers', cursive;
+            letter-spacing: 2px;
+        }
+
+        /* === 3D SCENE SETUP === */
+        .scene-3d {
+            perspective: 800px; /* Titik hilang perspektif */
+            width: 100%;
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(to bottom, #0ea5e9 0%, #bae6fd 40%, #ffffff 40%, #1e293b 100%); /* Langit ke Tanah */
+        }
+
+        .road-plane {
+            position: absolute;
+            bottom: -50px;
+            left: 50%;
+            transform: translateX(-50%) rotateX(60deg); /* Miringkan jalan */
+            transform-style: preserve-3d;
+            width: 600px; /* Lebar jalan tetap */
+            height: 200%; /* Panjang jalan */
+            background-color: #334155;
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+            border-left: 20px solid #ef4444; /* Bahu jalan */
+            border-right: 20px solid #ef4444;
+        }
+
+        /* Garis Jalan Bergerak */
+        .road-lines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: 
+                linear-gradient(90deg, transparent 32%, #ffffff 33%, transparent 34%, transparent 66%, #ffffff 67%, transparent 68%);
+            background-size: 100% 100px;
+            animation: moveRoad 0.4s linear infinite; /* Default, will be adjusted by JS */
+        }
+
+        @keyframes moveRoad {
+            from { background-position: 0 0; }
+            to { background-position: 0 100px; }
+        }
+
+        /* === PLAYER & OBJECTS === */
+        #player-wrapper {
+            position: absolute;
+            bottom: 10%; 
+            left: 50%;
+            width: 60px; 
+            height: 100px;
+            transform: translateX(-50%);
+            transition: left 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94); 
+            z-index: 20;
+        }
+
+        .car-visual {
+            width: 100%;
+            height: 100%;
+            transition: transform 0.2s ease-out;
+            filter: drop-shadow(0 10px 10px rgba(0,0,0,0.6)); 
+        }
+
+        .game-object {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            transform: translateX(-50%) rotateX(-30deg);
+            z-index: 10;
+        }
+
+        /* === EFEK ANGIN (SPEED LINES) === */
+        .wind-container {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 30;
+        }
+        
+        .wind-line {
+            position: absolute;
+            width: 2px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
+            animation: windFall 0.5s linear infinite;
+        }
+
+        @keyframes windFall {
+            0% { transform: translateY(-100px); opacity: 0; }
+            50% { opacity: 0.8; }
+            100% { transform: translateY(100vh); opacity: 0; }
+        }
+
+        .shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-4px, 0, 0); }
+            20%, 80% { transform: translate3d(4px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-8px, 0, 0); }
+            40%, 60% { transform: translate3d(8px, 0, 0); }
+        }
+
+        .custom-scroll::-webkit-scrollbar { height: 8px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background-color: #fbbf24; border-radius: 4px; }
+    </style>
+</head>
+<body class="h-screen w-screen text-white select-none">
+
+    <!-- === LAYAR 1: BENGKEL (GARAGE) === -->
+    <div id="garage-screen" class="w-full h-full max-w-4xl mx-auto flex flex-col p-4 relative z-50 bg-slate-900">
+        
+        <header class="flex justify-between items-center mb-2">
+            <h1 class="text-3xl md:text-4xl text-yellow-400 drop-shadow-md tracking-wider">🛠️ Bengkel 3D</h1>
+            
+            <!-- Pilihan Kecepatan -->
+            <div class="flex bg-slate-800 rounded-full p-1 border border-slate-600">
+                <button onclick="setSpeedMode('slow')" id="btn-slow" class="px-4 py-1 rounded-full font-bold text-sm md:text-base transition bg-green-500 text-white shadow-lg ring-2 ring-yellow-300">
+                    🐢 Santai (Anak)
+                </button>
+                <button onclick="setSpeedMode('fast')" id="btn-fast" class="px-4 py-1 rounded-full font-bold text-sm md:text-base transition text-gray-400 hover:text-white">
+                    🐇 Ngebut
+                </button>
+            </div>
+        </header>
+
+        <!-- Preview Mobil -->
+        <div class="flex-1 flex flex-col items-center justify-center bg-slate-800/50 rounded-3xl border-4 border-slate-700 relative overflow-hidden mb-4 shadow-2xl backdrop-blur-sm">
+            <div class="absolute inset-0 flex justify-center items-center opacity-30">
+                <div class="w-full h-full bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:20px_20px]"></div>
+            </div>
+            
+            <!-- SVG Mobil -->
+            <div id="car-preview" class="w-40 md:w-48 h-auto relative transition-all duration-300 transform hover:scale-110 cursor-pointer mb-4">
+                <svg viewBox="0 0 100 200" class="w-full h-full drop-shadow-xl" id="car-svg">
+                    <rect x="-5" y="30" width="15" height="35" rx="4" fill="#111"/>
+                    <rect x="-5" y="135" width="15" height="35" rx="4" fill="#111"/>
+                    <rect x="90" y="30" width="15" height="35" rx="4" fill="#111"/>
+                    <rect x="90" y="135" width="15" height="35" rx="4" fill="#111"/>
+                    <path id="car-body" d="M10,20 Q10,0 50,0 Q90,0 90,20 L90,180 Q90,200 50,200 Q10,200 10,180 Z" fill="#ef4444" stroke="#000" stroke-width="2"/>
+                    <path d="M25,20 L75,20 L75,50 L25,50 Z" fill="rgba(0,0,0,0.1)"/>
+                    <defs>
+                        <linearGradient id="glassGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" style="stop-color:#38bdf8;stop-opacity:1" />
+                            <stop offset="100%" style="stop-color:#0ea5e9;stop-opacity:1" />
+                        </linearGradient>
+                    </defs>
+                    <path d="M15,55 Q50,45 85,55 L87,85 Q50,75 13,85 Z" fill="url(#glassGrad)" stroke="#0284c7" stroke-width="1"/>
+                    <rect id="car-roof" x="13" y="87" width="74" height="60" rx="8" fill="#b91c1c"/>
+                    <path d="M18,150 L82,150 L80,165 L20,165 Z" fill="#38bdf8" stroke="#0284c7" stroke-width="1"/>
+                    <circle cx="15" cy="10" r="5" fill="#fef08a" stroke="#fbbf24" stroke-width="1"/>
+                    <circle cx="85" cy="10" r="5" fill="#fef08a" stroke="#fbbf24" stroke-width="1"/>
+                    <rect x="15" y="195" width="15" height="5" fill="#ef4444" class="lights-on"/>
+                    <rect x="70" y="195" width="15" height="5" fill="#ef4444" class="lights-on"/>
+                    <g id="car-sticker" transform="translate(50, 117)" class="text-4xl" style="font-size: 40px; text-anchor: middle; dominant-baseline: middle;"></g>
+                </svg>
+            </div>
+
+            <!-- Tombol Start Besar -->
+            <button onclick="startGame()" class="bg-gradient-to-b from-green-400 to-green-600 hover:from-green-500 hover:to-green-700 text-white px-12 py-3 rounded-full font-black text-2xl shadow-[0_6px_0_#166534] active:shadow-none active:translate-y-1 transition transform hover:scale-105 border-2 border-white/20">
+                MULAI BALAPAN! 🏁
+            </button>
+        </div>
+
+        <!-- Menu Kustomisasi -->
+        <div class="bg-slate-800/90 backdrop-blur rounded-2xl p-4 border-2 border-slate-600">
+            <div class="flex gap-4 mb-4 border-b border-slate-600 pb-2 overflow-x-auto custom-scroll">
+                <button onclick="setTab('color')" class="tab-btn px-6 py-2 rounded-full bg-slate-700 hover:bg-slate-600 font-bold text-white whitespace-nowrap active-tab ring-2 ring-yellow-400 shadow-md">🎨 Cat Warna</button>
+                <button onclick="setTab('sticker')" class="tab-btn px-6 py-2 rounded-full bg-slate-700 hover:bg-slate-600 font-bold text-white whitespace-nowrap shadow-md">⭐ Stiker</button>
+            </div>
+
+            <div id="panel-color" class="control-panel flex gap-4 overflow-x-auto pb-4 custom-scroll"></div>
+            <div id="panel-sticker" class="control-panel flex gap-4 overflow-x-auto pb-4 custom-scroll hidden"></div>
+        </div>
+    </div>
+
+    <!-- === LAYAR 2: BALAPAN (GAME) === -->
+    <div id="game-screen" class="hidden w-full h-full absolute inset-0 bg-black">
+        
+        <!-- Pemandangan 3D -->
+        <div class="scene-3d">
+            <!-- Langit -->
+            <div class="absolute top-10 right-10 w-20 h-20 bg-yellow-300 rounded-full blur-xl opacity-80"></div>
+            <div class="absolute top-20 left-20 w-32 h-10 bg-white rounded-full blur-xl opacity-20"></div>
+
+            <!-- Jalan Raya -->
+            <div class="road-plane">
+                <div class="road-lines" id="road-lines-anim"></div>
+                <div id="objects-layer" class="absolute inset-0 pointer-events-none transform-style-3d"></div>
+            </div>
+
+            <!-- Efek Angin -->
+            <div id="wind-fx" class="wind-container"></div>
+
+            <!-- Player -->
+            <div id="player-wrapper">
+                <div id="player-visual" class="car-visual"></div>
+            </div>
+        </div>
+
+        <!-- UI HUD -->
+        <div class="absolute top-4 left-4 right-4 flex justify-between z-50 max-w-4xl mx-auto">
+            <div class="bg-black/60 backdrop-blur px-6 py-2 rounded-2xl text-yellow-400 font-black text-3xl border-2 border-yellow-400 shadow-lg flex items-center gap-2">
+                🪙 <span id="score">0</span>
+            </div>
+            <button onclick="backToGarage()" class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-xl font-bold text-lg border-b-4 border-red-700 active:border-b-0 active:translate-y-1 shadow-lg">
+                ❌ Stop
+            </button>
+        </div>
+
+        <!-- Kontrol Layar Sentuh -->
+        <div class="absolute bottom-8 left-8 right-8 flex justify-between z-50 md:hidden">
+            <button ontouchstart="moveLeft()" onclick="moveLeft()" class="w-24 h-24 bg-white/10 backdrop-blur-md rounded-full border-4 border-white/50 text-6xl flex items-center justify-center active:bg-white/30 shadow-2xl transition transform active:scale-95">⬅️</button>
+            <button ontouchstart="moveRight()" onclick="moveRight()" class="w-24 h-24 bg-white/10 backdrop-blur-md rounded-full border-4 border-white/50 text-6xl flex items-center justify-center active:bg-white/30 shadow-2xl transition transform active:scale-95">➡️</button>
+        </div>
+        
+        <!-- Instruksi PC -->
+        <div class="hidden md:block absolute bottom-12 w-full text-center text-white/60 font-bold text-xl tracking-widest z-40">
+            [ ⬅️ GESER KIRI ] &nbsp; &nbsp; [ ➡️ GESER KANAN ]
+        </div>
+
+        <!-- Game Over Modal -->
+        <div id="game-over-modal" class="hidden absolute inset-0 bg-black/80 z-[100] flex flex-col items-center justify-center text-center p-6 backdrop-blur-md">
+            <h2 class="text-7xl text-red-500 racing-font mb-4 animate-bounce drop-shadow-[0_5px_5px_rgba(0,0,0,1)]">TABRAKAN!</h2>
+            <div class="text-9xl mb-6 transform hover:scale-110 transition">💥</div>
+            <p class="text-3xl text-white mb-8 font-bold">Skor Akhir: <span id="final-score" class="text-yellow-400 text-5xl">0</span></p>
+            <div class="flex flex-col sm:flex-row gap-6">
+                <button onclick="startGame()" class="bg-green-500 hover:bg-green-600 text-white px-8 py-4 rounded-full font-bold text-2xl border-b-4 border-green-700 active:border-b-0 active:translate-y-1 shadow-xl transition hover:scale-105">Main Lagi 🔄</button>
+                <button onclick="backToGarage()" class="bg-blue-500 hover:bg-blue-600 text-white px-8 py-4 rounded-full font-bold text-2xl border-b-4 border-blue-700 active:border-b-0 active:translate-y-1 shadow-xl transition hover:scale-105">Ke Bengkel 🛠️</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- KONFIGURASI & DATA ---
+        const carColors = ['#ef4444', '#3b82f6', '#22c55e', '#eab308', '#a855f7', '#ec4899', '#f97316', '#14b8a6', '#f8fafc', '#1e293b'];
+        const stickers = ['⭐', '⚡', '🔥', '🚀', '🐱', '🐶', '1', '7', '🏁', '❤️', '👑', '💎'];
+
+        let carConfig = { color: '#ef4444', sticker: '' };
+        let speedMode = 'slow'; // 'slow' or 'fast'
+
+        // --- BENGKEL LOGIC ---
+        function initGarage() {
+            const colorPanel = document.getElementById('panel-color');
+            carColors.forEach(c => {
+                const btn = document.createElement('button');
+                btn.className = 'w-14 h-14 rounded-full border-4 border-slate-600 hover:scale-110 transition flex-shrink-0 shadow-lg';
+                btn.style.backgroundColor = c;
+                btn.onclick = () => updateCar('color', c);
+                colorPanel.appendChild(btn);
+            });
+
+            const stickerPanel = document.getElementById('panel-sticker');
+            const clearBtn = document.createElement('button');
+            clearBtn.className = 'w-14 h-14 rounded-2xl bg-slate-600 flex items-center justify-center text-2xl border-2 border-slate-500 hover:bg-slate-500 flex-shrink-0 shadow-lg';
+            clearBtn.innerHTML = '🚫';
+            clearBtn.onclick = () => updateCar('sticker', '');
+            stickerPanel.appendChild(clearBtn);
+
+            stickers.forEach(s => {
+                const btn = document.createElement('button');
+                btn.className = 'w-14 h-14 rounded-2xl bg-white flex items-center justify-center text-3xl border-b-4 border-slate-300 hover:mt-1 hover:border-b-0 transition flex-shrink-0 shadow-lg';
+                btn.innerHTML = s;
+                btn.onclick = () => updateCar('sticker', s);
+                stickerPanel.appendChild(btn);
+            });
+        }
+
+        function setSpeedMode(mode) {
+            speedMode = mode;
+            const btnSlow = document.getElementById('btn-slow');
+            const btnFast = document.getElementById('btn-fast');
+
+            if (mode === 'slow') {
+                btnSlow.classList.add('bg-green-500', 'text-white', 'shadow-lg', 'ring-2', 'ring-yellow-300');
+                btnSlow.classList.remove('text-gray-400');
+                
+                btnFast.classList.remove('bg-red-500', 'text-white', 'shadow-lg', 'ring-2', 'ring-yellow-300');
+                btnFast.classList.add('text-gray-400');
+            } else {
+                btnFast.classList.add('bg-red-500', 'text-white', 'shadow-lg', 'ring-2', 'ring-yellow-300');
+                btnFast.classList.remove('text-gray-400');
+                
+                btnSlow.classList.remove('bg-green-500', 'text-white', 'shadow-lg', 'ring-2', 'ring-yellow-300');
+                btnSlow.classList.add('text-gray-400');
+            }
+        }
+
+        function setTab(tabName) {
+            ['color', 'sticker'].forEach(t => document.getElementById(`panel-${t}`).classList.add('hidden'));
+            document.getElementById(`panel-${tabName}`).classList.remove('hidden');
+            
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('ring-2', 'ring-yellow-400', 'active-tab'));
+            event.target.classList.add('ring-2', 'ring-yellow-400', 'active-tab');
+        }
+
+        function updateCar(type, value) {
+            if (type === 'color') {
+                document.getElementById('car-body').setAttribute('fill', value);
+                document.getElementById('car-roof').setAttribute('fill', value); 
+                document.getElementById('car-roof').setAttribute('filter', 'brightness(80%)');
+            } else if (type === 'sticker') {
+                document.getElementById('car-sticker').innerHTML = `<text y="10" fill="white" font-weight="bold">${value}</text>`;
+            }
+        }
+
+        // --- GAMEPLAY LOGIC ---
+        let gameLoopId;
+        let score = 0;
+        let gameSpeed = 5; 
+        let lanes = [17, 50, 83];
+        let currentLane = 1; 
+        let isGameOver = false;
+        let objects = []; 
+        let windInterval;
+
+        function startGame() {
+            document.getElementById('garage-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            document.getElementById('game-over-modal').classList.add('hidden');
+
+            const visual = document.getElementById('player-visual');
+            visual.innerHTML = document.getElementById('car-preview').innerHTML;
+            
+            score = 0;
+            document.getElementById('score').innerText = '0';
+            currentLane = 1;
+            isGameOver = false;
+            objects = [];
+            document.getElementById('objects-layer').innerHTML = '';
+            
+            // ATUR KECEPATAN AWAL BERDASARKAN MODE
+            if (speedMode === 'slow') {
+                gameSpeed = 4; // Sangat lambat
+                document.getElementById('road-lines-anim').style.animationDuration = '1.5s'; // Jalan lambat
+            } else {
+                gameSpeed = 12; // Cukup cepat
+                document.getElementById('road-lines-anim').style.animationDuration = '0.3s'; // Jalan cepat
+            }
+            
+            updatePlayerPosition();
+            createWind();
+
+            lastTime = performance.now();
+            requestAnimationFrame(gameLoop);
+            
+            window.addEventListener('keydown', handleKeyInput);
+        }
+
+        function backToGarage() {
+            cancelAnimationFrame(gameLoopId);
+            clearInterval(windInterval);
+            window.removeEventListener('keydown', handleKeyInput);
+            document.getElementById('game-screen').classList.add('hidden');
+            document.getElementById('garage-screen').classList.remove('hidden');
+        }
+
+        function handleKeyInput(e) {
+            if (isGameOver) return;
+            if (e.key === 'ArrowLeft') moveLeft();
+            if (e.key === 'ArrowRight') moveRight();
+        }
+
+        function moveLeft() {
+            if (currentLane > 0) {
+                currentLane--;
+                updatePlayerPosition();
+                tiltCar(-15);
+            }
+        }
+
+        function moveRight() {
+            if (currentLane < 2) {
+                currentLane++;
+                updatePlayerPosition();
+                tiltCar(15);
+            }
+        }
+
+        function tiltCar(deg) {
+            const car = document.getElementById('player-visual');
+            car.style.transform = `rotateZ(${deg}deg)`;
+            setTimeout(() => {
+                car.style.transform = `rotateZ(0deg)`;
+            }, 300);
+        }
+
+        function updatePlayerPosition() {
+            const player = document.getElementById('player-wrapper');
+            player.style.left = lanes[currentLane] + '%';
+        }
+
+        function createWind() {
+            const container = document.getElementById('wind-fx');
+            container.innerHTML = '';
+            // Lebih sedikit angin di mode lambat
+            const count = speedMode === 'slow' ? 5 : 20;
+            
+            for(let i=0; i<count; i++) {
+                const line = document.createElement('div');
+                line.className = 'wind-line';
+                line.style.left = Math.random() * 100 + '%';
+                line.style.height = (Math.random() * 50 + 50) + 'px';
+                line.style.opacity = Math.random() * 0.5;
+                const dur = speedMode === 'slow' ? (Math.random() * 0.5 + 1) : (Math.random() * 0.3 + 0.2);
+                line.style.animationDuration = dur + 's';
+                line.style.animationDelay = Math.random() * 2 + 's';
+                container.appendChild(line);
+            }
+        }
+
+        // --- GAME LOOP ---
+        let lastTime = 0;
+        let spawnTimer = 0;
+
+        function gameLoop(timestamp) {
+            if (isGameOver) return;
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+
+            spawnTimer += deltaTime;
+            
+            // Spawn Rate Logic
+            let spawnRate;
+            if (speedMode === 'slow') {
+                spawnRate = 2500; // Jarang (2.5 detik sekali)
+            } else {
+                spawnRate = Math.max(500, 1500 - (score * 5)); // Cepat dan makin cepat
+            }
+            
+            if (spawnTimer > spawnRate) {
+                spawnObject();
+                spawnTimer = 0;
+                
+                // Tambah kecepatan (Hanya di mode Fast)
+                if (speedMode === 'fast' && gameSpeed < 30) {
+                    gameSpeed += 0.05;
+                }
+            }
+
+            moveObjects(deltaTime);
+            gameLoopId = requestAnimationFrame(gameLoop);
+        }
+
+        function spawnObject() {
+            const type = Math.random() > 0.4 ? 'obstacle' : 'coin';
+            const lane = Math.floor(Math.random() * 3);
+            
+            const obj = document.createElement('div');
+            obj.className = 'game-object absolute flex items-center justify-center font-bold';
+            
+            obj.style.top = '-200px'; 
+            
+            const xPositions = [100, 300, 500];
+            obj.style.left = xPositions[lane] + 'px';
+
+            if (type === 'obstacle') {
+                const obsEmojis = ['🪨', '🚧', '🛑', '🪵', '🚙'];
+                obj.innerText = obsEmojis[Math.floor(Math.random() * obsEmojis.length)];
+                obj.dataset.type = 'obstacle';
+                obj.style.fontSize = '60px';
+            } else {
+                obj.innerText = '🪙';
+                obj.dataset.type = 'coin';
+                obj.style.fontSize = '50px';
+                obj.style.textShadow = '0 0 20px gold';
+            }
+
+            document.getElementById('objects-layer').appendChild(obj);
+            
+            objects.push({
+                el: obj,
+                y: -200, 
+                lane: lane,
+                type: type,
+                active: true
+            });
+        }
+
+        function moveObjects(deltaTime) {
+            const roadHeight = 1200; 
+            const playerHitY_Start = 900;
+            const playerHitY_End = 1050;
+
+            objects.forEach((obj) => {
+                if (!obj.active) return;
+
+                const moveAmt = gameSpeed * (deltaTime / 16);
+                obj.y += moveAmt;
+                obj.el.style.top = obj.y + 'px';
+
+                if (obj.y > roadHeight) {
+                    obj.el.remove();
+                    obj.active = false;
+                    return;
+                }
+
+                if (obj.lane === currentLane) {
+                    if (obj.y > playerHitY_Start && obj.y < playerHitY_End) {
+                        if (obj.type === 'coin') {
+                            score += 10;
+                            document.getElementById('score').innerText = score;
+                            obj.el.style.transform = 'translateY(-100px) scale(2) rotate(360deg)';
+                            obj.el.style.opacity = '0';
+                            obj.el.style.transition = 'all 0.3s';
+                            obj.active = false;
+                            setTimeout(() => obj.el.remove(), 300);
+                        } else {
+                            // Di mode lambat, beri kesempatan kedua? (Opsional, saat ini langsung game over)
+                            gameOver();
+                        }
+                    }
+                }
+            });
+        }
+
+        function gameOver() {
+            isGameOver = true;
+            cancelAnimationFrame(gameLoopId);
+            clearInterval(windInterval);
+            
+            document.body.classList.add('shake');
+            setTimeout(() => document.body.classList.remove('shake'), 500);
+
+            document.getElementById('final-score').innerText = score;
+            document.getElementById('game-over-modal').classList.remove('hidden');
+        }
+
+        // Init
+        initGarage();
+
+    </script>
+</body>
+</html>
