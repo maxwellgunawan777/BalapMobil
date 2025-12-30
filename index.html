@@ -303,6 +303,109 @@
         let carConfig = { color: '#ef4444', sticker: '' };
         let speedMode = 'slow';
 
+        // --- SISTEM AUDIO (Web Audio API) ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let engineOsc = null;
+        let engineGain = null;
+
+        function initAudio() {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function startEngineSound() {
+            initAudio();
+            if (engineOsc) return;
+
+            engineOsc = audioCtx.createOscillator();
+            engineGain = audioCtx.createGain();
+            
+            // Menggunakan wave sawtooth untuk suara kasar seperti mesin
+            engineOsc.type = 'sawtooth';
+            engineOsc.frequency.value = 80; // Start freq
+            
+            // Filter biar ga terlalu tajam
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 400;
+
+            engineOsc.connect(filter);
+            filter.connect(engineGain);
+            engineGain.connect(audioCtx.destination);
+            
+            engineGain.gain.value = 0.05; // Volume kecil aja
+            engineOsc.start();
+        }
+
+        function updateEnginePitch(speed) {
+            if (engineOsc && audioCtx.state === 'running') {
+                // Mapping speed game ke frekuensi suara
+                // Speed 4-25 -> Freq 80-200
+                const targetFreq = 80 + (speed * 4);
+                engineOsc.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.1);
+            }
+        }
+
+        function stopEngineSound() {
+            if (engineOsc) {
+                try {
+                    engineOsc.stop();
+                    engineOsc.disconnect();
+                } catch(e) {}
+                engineOsc = null;
+            }
+        }
+
+        function playCrashSound() {
+            initAudio();
+            const bufferSize = audioCtx.sampleRate * 0.5; // 0.5 detik
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            
+            // White noise
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = buffer;
+            
+            const noiseGain = audioCtx.createGain();
+            noiseGain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+            noiseGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+            
+            // Filter biar "bugh" bukan "shhh"
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 800;
+
+            noise.connect(filter);
+            filter.connect(noiseGain);
+            noiseGain.connect(audioCtx.destination);
+            
+            noise.start();
+        }
+
+        function playCoinSound() {
+            initAudio();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(1200, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1800, audioCtx.currentTime + 0.1);
+            
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.1);
+        }
+
         // --- BENGKEL LOGIC ---
         function initGarage() {
             const colorPanel = document.getElementById('panel-color');
@@ -379,8 +482,12 @@
         let currentLane = 1; 
         let isGameOver = false;
         let objects = []; 
+        let windInterval;
 
         function startGame() {
+            initAudio(); // Init audio context on user click
+            startEngineSound();
+
             document.getElementById('garage-screen').classList.add('hidden');
             document.getElementById('game-screen').classList.remove('hidden');
             document.getElementById('game-over-modal').classList.add('hidden');
@@ -414,6 +521,7 @@
         }
 
         function backToGarage() {
+            stopEngineSound();
             cancelAnimationFrame(gameLoopId);
             window.removeEventListener('keydown', handleKeyInput);
             document.getElementById('game-screen').classList.add('hidden');
@@ -498,6 +606,8 @@
             }
 
             moveObjects(deltaTime);
+            updateEnginePitch(gameSpeed); // Update suara mesin
+            
             gameLoopId = requestAnimationFrame(gameLoop);
         }
 
@@ -519,7 +629,8 @@
             obj.style.transform = 'translateX(-50%)'; // Center in lane
 
             if (type === 'obstacle') {
-                const obsEmojis = ['🪨', '🚧', '🛑', '🪵', '🚙'];
+                // GANTI OBSTACLE KE KENDARAAN SAJA
+                const obsEmojis = ['🚙', '🚕', '🚗', '🏎️', '🛵', '🏍️', '🚌', '🚐'];
                 obj.innerText = obsEmojis[Math.floor(Math.random() * obsEmojis.length)];
                 obj.dataset.type = 'obstacle';
                 obj.style.fontSize = '50px';
@@ -575,6 +686,7 @@
                     // Check intersection
                     if (obj.y > playerTopPx && obj.y < playerBottomPx) {
                         if (obj.type === 'coin') {
+                            playCoinSound(); // Bunyi koin
                             score += 10;
                             document.getElementById('score').innerText = score;
                             // Visual Pop
@@ -593,6 +705,8 @@
 
         function gameOver() {
             isGameOver = true;
+            stopEngineSound(); // Stop mesin
+            playCrashSound();  // Bunyi tabrakan
             cancelAnimationFrame(gameLoopId);
             
             document.body.classList.add('shake');
